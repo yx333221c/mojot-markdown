@@ -57,7 +57,14 @@ node tools/serve.js 8099
 node tools/test-render.js                 # 渲染引擎 + XSS 防护（18 项）
 node tools/serve.js 8099                 # 另开一个终端
 node tools/verify-browser.js             # Headless Chrome 端到端（24 项）
+node tools/verify-live.js                # 线上 GitHub Pages 冒烟验证（7 项）
 ```
+
+## 线上地址
+
+GitHub Pages：**https://yx333221c.github.io/mojot-markdown/**
+
+仓库：https://github.com/yx333221c/mojot-markdown （默认分支 `main`，Pages 从根目录部署）
 
 ## 编译 Windows 启动器（可选）
 
