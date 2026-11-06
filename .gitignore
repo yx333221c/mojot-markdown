@@ -1,0 +1,90 @@
+# ============================================================
+# 墨记 Mojot · 提交白名单策略
+# 规则：仓库中不允许提交二进制文件（图片/字体/压缩包/可执行程序等），
+#       唯一例外是最终交付的 Windows 可执行文件（见文件末尾的 ! 规则）。
+# ============================================================
+
+# ---- 依赖与构建产物 ----
+node_modules/
+dist/
+build/
+out/
+*.tsbuildinfo
+.npm/
+.eslintcache
+.parcel-cache/
+.vite/
+
+# ---- 日志 / 临时 / 系统 ----
+logs/
+*.log
+*.err
+npm-debug.log*
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+.DS_Store
+Thumbs.db
+desktop.ini
+_shots/
+.hallmark/
+
+# ---- 设计稿与本地快照（仅本地保留，不入库）----
+design-studio/
+*.zip
+
+# ---- 二进制文件一律禁止入库 ----
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.ico
+*.webp
+*.avif
+*.svgz
+*.pdf
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+*.mp3
+*.wav
+*.mp4
+*.mov
+*.avi
+*.7z
+*.rar
+*.gz
+*.tgz
+*.jar
+*.dll
+*.so
+*.dylib
+*.pdb
+*.obj
+*.o
+*.a
+*.lib
+*.pyc
+*.pyo
+*.class
+*.db
+*.sqlite
+*.wasm
+*.exe
+*.msi
+*.dmg
+*.app
+*.bin
+*.dat
+*.pak
+*.cache
+
+# ---- 唯一例外：最终交付的 Windows 可执行文件 ----
+# 仅放行仓库根目录下、明确命名的交付 exe
+!Mojot-Markdown.exe

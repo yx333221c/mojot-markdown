@@ -1,0 +1,91 @@
+/* 墨记 Markdown 编辑器 · 设计令牌
+   色彩 / 字体 / 圆角 / 阴影 —— 全局唯一来源
+   [data-theme='dark'] 覆盖浅色纸面变量，深色应用框架保持不变 */
+
+:root {
+  /* 品牌与主色 */
+  --accent: #5b5bd6;
+  --accent-hover: #4f4fc7;
+  --accent-soft: rgba(91, 91, 214, 0.12);
+  --accent-ring: rgba(91, 91, 214, 0.35);
+  --accent-ink: #ffffff;
+
+  --ok: #2fa36b;
+  --ok-soft: rgba(47, 163, 107, 0.14);
+  --warn: #d9973b;
+
+  /* 应用框架（深色 chrome） */
+  --chrome: #14161d;
+  --chrome-2: #1b1e27;
+  --chrome-3: #232633;
+  --chrome-line: #2a2e3c;
+  --chrome-text: #e8e9ef;
+  --chrome-muted: #8d92a3;
+  --chrome-icon: #aeb3c2;
+  --chrome-hover: rgba(255, 255, 255, 0.07);
+
+  /* 纸面（编辑器 / 预览） */
+  --paper: #fbfaf8;
+  --paper-2: #ffffff;
+  --paper-editor: #f8f7f4;
+  --paper-line: #e9e6e0;
+  --ink: #22242b;
+  --ink-2: #454a55;
+  --ink-muted: #8b8f99;
+  --ink-faint: #b9bcc4;
+
+  --code-bg: #f0eee8;
+  --code-inline-bg: #efece4;
+  --code-inline-ink: #c2417a;
+  --selection: rgba(91, 91, 214, 0.22);
+
+  /* Markdown 源码语法着色 */
+  --syn-head: #7a4fc0;
+  --syn-punct: #b0b3bd;
+  --syn-bold: #c2417a;
+  --syn-italic: #2b7f8f;
+  --syn-link: #2f6fd0;
+  --syn-quote: #b07a2c;
+  --syn-code: #24806b;
+  --syn-table: #8a6d3b;
+  --syn-fn: #2f6fd0;
+
+  /* 形状与层次 */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-pop: 0 12px 32px rgba(18, 20, 30, 0.18), 0 2px 8px rgba(18, 20, 30, 0.10);
+  --shadow-card: 0 1px 2px rgba(20, 22, 30, 0.04), 0 8px 24px rgba(20, 22, 30, 0.06);
+
+  /* 字体 */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
+  --font-read: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC', serif;
+}
+
+/* 深色主题：只翻转纸面，框架仍为深色 */
+[data-theme='dark'] {
+  --paper: #171a22;
+  --paper-2: #1c202a;
+  --paper-editor: #151820;
+  --paper-line: #2a2f3b;
+  --ink: #e6e8ee;
+  --ink-2: #b9bec9;
+  --ink-muted: #7e8595;
+  --ink-faint: #5b6272;
+  --code-bg: #20242f;
+  --code-inline-bg: #262a36;
+  --code-inline-ink: #f08ab8;
+  --selection: rgba(122, 122, 245, 0.30);
+  --syn-head: #b39af0;
+  --syn-punct: #6b7280;
+  --syn-bold: #f08ab8;
+  --syn-italic: #6ec6d6;
+  --syn-link: #7aa9f5;
+  --syn-quote: #e0ae63;
+  --syn-code: #63c9ab;
+  --syn-table: #d4b26c;
+  --syn-fn: #7aa9f5;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
