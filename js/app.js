@@ -690,8 +690,11 @@
     load();
     document.documentElement.dataset.theme = state.theme;
     applyView(state.view);
-    applyRatio(state.ratio);
+    // applyView 在分栏时会恢复比例；此处不再重复设置，避免覆盖视图模式
     renderAll();
+    try { source.setSelectionRange(0, 0); } catch (e) {}
+    updateCaret();
+    source.focus();
     saveNow();
     setInterval(updateCounts, 30000);
   }

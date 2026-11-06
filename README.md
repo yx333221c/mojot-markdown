@@ -36,7 +36,9 @@
 
 ### 方式一：双击 exe（Windows）
 
-运行 `Mojot-Markdown.exe`，它会启动内置静态服务器并在默认浏览器打开编辑器（关闭窗口即停止服务）。
+运行 `Mojot-Markdown.exe`，它会启动内置静态服务器（仅监听 `127.0.0.1:17777`）并在默认浏览器打开编辑器；同时显示一个控制窗口，可「重新打开编辑器」或「退出」。关闭窗口即停止服务。
+
+> exe 是零依赖的原生 Win32 启动器（约 89 KB），不打包浏览器运行时；网页文件需与 exe 位于同一目录（也兼容 `desktop/` 子目录布局）。
 
 ### 方式二：直接用浏览器
 
@@ -59,11 +61,17 @@ node tools/verify-browser.js             # Headless Chrome 端到端（24 项）
 
 ## 编译 Windows 启动器（可选）
 
-需要 MinGW-w64 gcc：
+需要 MinGW-w64 gcc（本机没有时自行安装，例如 `winget install -e --id mingw-w64` 或从 [WinLibs](https://winlibs.com/) 下载解压后把 `bin` 加入 PATH）：
 
 ```bash
-gcc -O2 -mwindows -o Mojot-Markdown.exe desktop/launcher.c -lws2_32 -lshell32
+gcc -O2 -mwindows -Wall -Wextra -o Mojot-Markdown.exe desktop/launcher.c -lws2_32 -lshell32
 ```
+
+已实测：编译产物约 89 KB，双击后自动服务 `index.html` / `css` / `js`，浏览器可直接编辑。
+
+## 关于二进制文件
+
+仓库通过 `.gitignore` 禁止一切二进制文件入库（图片、字体、压缩包、依赖等），**唯一例外**是根目录的 `Mojot-Markdown.exe`（最终交付物）。因此整个仓库其余内容都是纯文本，可直接阅读与审阅。
 
 ## 设计稿
 
