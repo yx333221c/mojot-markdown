@@ -104,6 +104,55 @@
   document.querySelector('.toolbar [data-fmt="italic"]').click();
   checks['问题7：粗斜体组合不吞标记'] = src.value === '**_线上组合_**' && !!prev.querySelector('strong em');
 
+  // ===== 第三轮反馈 =====
+  const has4star = (s) => /\*{4}/.test(s);
+
+  // 反馈1：源码含 **** 时全选加粗，不产生四星、不吞后续正文
+  src.value = '****Markdown 源码****，右侧实**';
+  src.dispatchEvent(new Event('input', { bubbles: true }));
+  src.focus(); src.setSelectionRange(0, src.value.length);
+  document.querySelector('.toolbar [data-fmt="bold"]').click();
+  checks['三轮1：源码含****全选加粗无四星'] = !has4star(src.value) && src.value.includes('右侧实');
+
+  // 预览区连点三次加粗，星号不增长
+  src.value = '线上连点测试，后面还有内容。';
+  src.dispatchEvent(new Event('input', { bubbles: true }));
+  for (let i = 0; i < 3; i++) {
+    const tgt = prev.querySelector('strong') ? prev.querySelector('strong').firstChild : prev.querySelector('p').firstChild;
+    const rr = document.createRange(); rr.setStart(tgt, 0); rr.setEnd(tgt, tgt.nodeValue.length);
+    ds.removeAllRanges(); ds.addRange(rr);
+    prev.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    document.querySelector('.bubble [data-fmt="bold"]').click();
+  }
+  checks['三轮1：预览连点三次星号不增长'] = !has4star(src.value) && src.value.includes('后面还有内容');
+  ds.removeAllRanges();
+
+  // 粗斜体混合：去粗体保留斜体
+  src.value = '***文本***后续';
+  src.dispatchEvent(new Event('input', { bubbles: true }));
+  const emL = prev.querySelector('em');
+  if (emL && emL.firstChild) {
+    const rr = document.createRange(); rr.setStart(emL.firstChild, 0); rr.setEnd(emL.firstChild, emL.firstChild.nodeValue.length);
+    ds.removeAllRanges(); ds.addRange(rr);
+    prev.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    document.querySelector('.bubble [data-fmt="bold"]').click();
+    checks['三轮1：***文本*** 去粗体保留斜体'] = /^\*文本\*后续/.test(src.value);
+    ds.removeAllRanges();
+  } else {
+    checks['三轮1：***文本*** 去粗体保留斜体'] = false;
+  }
+
+  // 反馈2：版本号硬编码 2.0.0
+  const vEl = document.querySelector('#appVersion');
+  checks['三轮2：版本号硬编码 v2.0.0'] = !!vEl && vEl.textContent.trim() === 'v2.0.0';
+
+  // 反馈3：页面不再有任何二进制资源引用（图片/字体都由 CSS 变量或系统字体提供）
+  const bins = Array.from(document.querySelectorAll('img[src], link[rel="stylesheet"], script[src]'))
+    .map(e => e.getAttribute('src') || e.getAttribute('href'))
+    .filter(Boolean)
+    .filter(u => /\.(exe|png|jpg|jpeg|gif|zip|woff2?|ttf|otf|pdf)$/i.test(u));
+  checks['三轮3：页面不引用任何仓库二进制资源'] = bins.length === 0;
+
   // 恢复干净文档
   src.value = '# 墨记 Mojot\n\n线上版本运行正常。';
   src.dispatchEvent(new Event('input', { bubbles: true }));
