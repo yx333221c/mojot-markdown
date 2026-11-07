@@ -76,6 +76,7 @@
     view: 'split',
     theme: 'light',
     ratio: 50,
+    syncMode: 'both',
     lastSaved: Date.now()
   };
   var undoStack = [];
@@ -800,6 +801,10 @@
   function closeMenus() {
     headingMenu.hidden = true; exportMenu.hidden = true; moreMenu.hidden = true;
     headingBtn.classList.remove('is-active');
+    var am = document.getElementById('avatarMenu');
+    var ab = document.getElementById('avatarBtn');
+    if (am) am.hidden = true;
+    if (ab) ab.setAttribute('aria-expanded', 'false');
   }
   headingBtn.addEventListener('mousedown', function (e) { e.preventDefault(); });
   headingBtn.addEventListener('click', function (e) {
@@ -1043,22 +1048,191 @@
     if (dragging) { dragging = false; document.body.style.cursor = ''; savePrefs(); }
   });
 
-  /* ---------------- 同步滚动（分栏时） ---------------- */
-  var syncing = false;
-  source.addEventListener('scroll', function () {
-    if (state.view !== 'split' || syncing) return;
-    syncing = true;
-    var ps = $('#previewScroll');
-    var ratio = source.scrollTop / Math.max(1, source.scrollHeight - source.clientHeight);
-    ps.scrollTop = ratio * (ps.scrollHeight - ps.clientHeight);
-    requestAnimationFrame(function () { syncing = false; });
-  });
+  /* ============================================================
+   * 同步滚动
+   * 之前的实现只按「滚动百分比」换算，且只有源码 → 预览单向；
+   * 空行数量与渲染高度不成比例时就对不上。这里改成「行锚点」：
+   *   向右侧滚动时，找到源码视口顶端所在行，再看该行对应的
+   *   预览块（渲染时写了 data-line-start），把它顶到相同位置。
+   *   反向同理。两侧都监听，用节流 + 防回环标志避免互相打架。
+   * 支持四种模式，可在预览区标题栏切换并记住偏好。
+   * ============================================================ */
+  var syncState = { mode: 'both', lock: false, raf: null };
+
+  var LINE_H = 22; // 源码行高，与 CSS 保持一致
+
+  /* 源码滚动位置 → 当前顶端对应的源码行号（0-based） */
+  function sourceTopLine() {
+    var top = source.scrollTop;
+    var firstLine = Math.min(
+      Math.max(0, Math.floor(top / LINE_H)),
+      Math.max(0, source.value.split('\n').length - 1)
+    );
+    return firstLine;
+  }
+
+  /* 在预览里找到「源码行 <= line 且最接近」的块（外层块优先） */
+  function previewScrollForLine(line) {
+    var blocks = preview.querySelectorAll('[data-line-start]');
+    var container = $('#previewScroll');
+    var cRect = container.getBoundingClientRect();
+    var chosen = null;
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      // 只取最外层块（跳过嵌套在其它 data-line-start 块内的元素）
+      var nested = b.parentNode && b.parentNode.closest('[data-line-start]');
+      if (nested && nested !== preview) continue;
+      var ls = +b.getAttribute('data-line-start');
+      if (ls <= line) chosen = b; else break;
+    }
+    if (!chosen) return 0;
+    var bRect = chosen.getBoundingClientRect();
+    return Math.max(0, bRect.top - cRect.top + container.scrollTop);
+  }
+
+  /* 预览滚动位置 → 顶端所在源码行号 */
+  function previewTopLine() {
+    var container = $('#previewScroll');
+    var cRect = container.getBoundingClientRect();
+    var blocks = preview.querySelectorAll('[data-line-start]');
+    var chosen = null;
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      if (b.parentNode && b.parentNode.closest && b.parentNode.closest('[data-line-start]') &&
+          b.parentNode.closest('[data-line-start]') !== preview) continue;
+      var r = b.getBoundingClientRect();
+      if (r.bottom > cRect.top + 4) { chosen = b; break; }
+    }
+    if (!chosen) return 0;
+    return +chosen.getAttribute('data-line-start') || 0;
+  }
+
+  function scrollSourceToLine(line) {
+    source.scrollTop = Math.max(0, line * LINE_H);
+  }
+
+  function applySync(from) {
+    if (state.view !== 'split') return;
+    var mode = syncState.mode;
+    if (mode === 'none') return;
+    if (from === 'source' && (mode === 'preview-to-source')) return;
+    if (from === 'preview' && (mode === 'source-to-preview')) return;
+    if (syncState.lock) return;
+
+    syncState.lock = true;
+    if (from === 'source') {
+      var line = sourceTopLine();
+      var target = previewScrollForLine(line);
+      $('#previewScroll').scrollTop = target;
+    } else {
+      var line2 = previewTopLine();
+      source.scrollTop = Math.max(0, line2 * LINE_H);
+    }
+    // 一帧后解锁，避免双向抖动
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { syncState.lock = false; });
+    });
+  }
+
+  function throttledSync(from) {
+    if (syncState.raf) return;
+    syncState.raf = requestAnimationFrame(function () {
+      syncState.raf = null;
+      applySync(from);
+    });
+  }
+
+  source.addEventListener('scroll', function () { throttledSync('source'); });
+  $('#previewScroll').addEventListener('scroll', function () { throttledSync('preview'); });
+
+  /* 同步模式选择器 */
+  var SYNC_MODES = {
+    both: '双向同步',
+    'source-to-preview': '仅代码 → 预览',
+    'preview-to-source': '仅预览 → 代码',
+    none: '不同步'
+  };
+  function initSyncMode() {
+    var sel = $('#syncMode');
+    if (!sel) return;
+    var saved = state.syncMode || 'both';
+    if (!SYNC_MODES[saved]) saved = 'both';
+    syncState.mode = saved;
+    sel.value = saved;
+    sel.addEventListener('change', function () {
+      syncState.mode = sel.value;
+      state.syncMode = sel.value;
+      savePrefs();
+      toastMsg('同步方式：' + SYNC_MODES[sel.value]);
+    });
+  }
+
+  /* ---------------- 头像菜单 ---------------- */
+  function initAvatar() {
+    var btn = $('#avatarBtn');
+    var menu = $('#avatarMenu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = menu.hidden;
+      closeMenus();
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    $$('#avatarMenu [data-avatar]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        menu.hidden = true;
+        doAvatar(item.dataset.avatar);
+        btn.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
+  function doAvatar(kind) {
+    if (kind === 'stats') {
+      var words = countWords(source.value);
+      var lines = source.value.split('\n').length;
+      var blocks = preview.querySelectorAll('[data-line-start]').length;
+      alert('当前文档统计\n\n' +
+        '字数：' + words + '\n行数：' + lines + '\n渲染块数：' + blocks +
+        '\n阅读时长：约 ' + Math.max(1, Math.ceil(words / 300)) + ' 分钟');
+    } else if (kind === 'import') {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.md,.markdown,.txt,text/markdown,text/plain';
+      input.addEventListener('change', function () {
+        var f = input.files && input.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          applyValue(String(reader.result || ''), 0, 0);
+          if (titleInput) titleInput.value = f.name.replace(/\.(md|markdown|txt)$/i, '');
+          saveNow();
+          toastMsg('已导入 ' + f.name);
+        };
+        reader.readAsText(f, 'utf-8');
+      });
+      input.click();
+    } else if (kind === 'fullscreen') {
+      var root = document.documentElement;
+      if (!document.fullscreenElement) {
+        (root.requestFullscreen && root.requestFullscreen()) || toastMsg('当前浏览器不支持全屏');
+      } else {
+        document.exitFullscreen && document.exitFullscreen();
+      }
+    } else if (kind === 'shortcuts') {
+      alert('快捷键\n\n' +
+        'Ctrl+B  加粗\nCtrl+I  斜体\nCtrl+K  链接\nCtrl+`  行内代码\n' +
+        'Ctrl+Shift+X  删除线\nCtrl+Z / Ctrl+Y  撤销 / 重做\nCtrl+S  立即保存\n' +
+        'Ctrl+1/2/3  标题   Ctrl+0  正文\nTab  插入两个空格');
+    }
+  }
 
   /* ---------------- 版本号 ----------------
      直接用硬编码版本常量，不再依赖外部文件或构建脚本。
      方案号形如 `重构.修复.优化`，即「重构轮次 · 修复轮次 · 优化轮次」。 */
-  var VERSION = '2.0.0';
-  var VERSION_LABEL = '重构 2 · 修复 0 · 优化 0';
+  var VERSION = '2.0.1';
+  var VERSION_LABEL = '重构 2 · 修复 0 · 优化 1';
   function initVersion() {
     var el = $('#appVersion');
     if (!el) return;
@@ -1070,6 +1244,8 @@
   function init() {
     load();
     initVersion();
+    initSyncMode();
+    initAvatar();
     document.documentElement.dataset.theme = state.theme;
     applyView(state.view);
     // applyView 在分栏时会恢复比例；此处不再重复设置，避免覆盖视图模式
