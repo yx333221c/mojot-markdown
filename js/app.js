@@ -264,47 +264,95 @@
   source.addEventListener('scroll', syncGutterScroll);
   function syncGutterScroll() { gutter.scrollTop = source.scrollTop; }
 
+  /* ============================================================
+   * 标记 run 工具：把「连续的同种标记字符」当成一个整体来判定。
+   * 之前只看固定长度，遇到 `****文本****` 这类被多次点击撑长的
+   * run 就判不出「已加粗」，于是再套一层，越点越长。
+   * ============================================================ */
+  function runEndingAt(s, pos, ch) {
+    var i = pos;
+    while (i > 0 && s.charAt(i - 1) === ch) i--;
+    return { start: i, len: pos - i };
+  }
+  function runStartingAt(s, pos, ch) {
+    var i = pos;
+    while (i < s.length && s.charAt(i) === ch) i++;
+    return { len: i - pos };
+  }
+
+  /* 把代码围栏之外的非法超长标记 run 收敛为合法形式：
+     `*` 合法长度 1/2/3（3 = 粗斜体），4 及以上一律收敛为 2；
+     `_` 同理；`~` 只允许 2。这样 `****文本****` 会自动修成 `**文本**`。 */
+  function repairMarkerRuns(text) {
+    var lines = String(text).split('\n');
+    var inFence = false, fenceChar = '';
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].match(/^\s{0,3}(\`{3,}|~{3,})/);
+      if (m) {
+        if (!inFence) { inFence = true; fenceChar = m[1].charAt(0); continue; }
+        if (m[1].charAt(0) === fenceChar) { inFence = false; continue; }
+      }
+      if (inFence) continue;
+      lines[i] = lines[i]
+        .replace(/\*{4,}/g, '**')
+        .replace(/_{4,}/g, '__')
+        .replace(/~{3,}/g, '~~');
+    }
+    return lines.join('\n');
+  }
+
   /* ---------------- 选区格式命令（核心） ----------------
      强调标记的闭合侧不能紧跟空白（CommonMark 规则），否则无法渲染。
-     因此加格式时自动把选区的首尾空白移到标记「外面」：
-       「 文本 」 → 「 **文本** 」，既保留原空白又保证格式生效。
+     加格式时自动把选区的首尾空白移到标记「外面」：
+       「 文本 」 → 「 **文本** 」。
 
-     另一种常见情况：预览区映射回来的选区可能「少包一层」标记
-     （例如源码是 `**文本**`，映射得到的是 `文本`），导致再加斜体
-     时变成 `***文本***`。`widenToMarkers` 已在映射阶段把外层标记
-     纳入选区，这里只需按「选区外紧邻成对标记 → 取消」判定即可。   */
+     取消（toggle）按「选区两侧标记 run 的真实长度」删除：
+     预览映射过来的选区可能落在标记内侧 / 外侧 / 恰好包住标记，
+     因此左右各自判断，且只删与本次格式同层的标记：
+       · 粗体只认 * 或 _ 的 run，按 2 个删；斜体按 1 个删。
+       · run 里有 3 个星号（粗+斜）时，删 2 个保留 1 个（只剩斜体），
+         或删 1 个保留 2 个（只剩粗体）——由本次操作决定。
+     删除后调用 repairMarkerRuns 把非法超长 run 收敛，避免越点越长。 */
   function wrapSelection(prefix, suffix, placeholder) {
     var start = source.selectionStart, end = source.selectionEnd;
     var val = source.value;
     var sel = val.slice(start, end);
 
-    // 情形 A：选区外紧邻「成对的同类标记」→ 取消（切换）
-    // 例如源码 `**文本**` 且选区是 `文本`，或选区就是 `**文本**`。
     var ch = prefix.charAt(0);
-    var openRun = val.slice(0, start).match(new RegExp('(\\' + ch + '+)')) ? 
-      val.slice(0, start).match(new RegExp('(\\' + ch + '+)'))[1] : '';
-    var closeRun = val.slice(end).match(new RegExp('^(\\' + ch + '+)')) ?
-      val.slice(end).match(new RegExp('^(\\' + ch + '+)'))[1] : '';
-    if (openRun && closeRun && openRun.length >= prefix.length && closeRun.length >= prefix.length) {
-      var strip = prefix.length; // 粗体 2、斜体 1、删除线 2、代码 1
-      var newVal = val.slice(0, start - strip) + sel + val.slice(end + strip);
-      applyValue(newVal, start - strip, end - strip);
+    var level = prefix.length;   // 粗体 2、斜体 1、删除线 2、行内代码 1
+
+    var bRun = runEndingAt(val, start, ch);            // 选区左侧紧邻
+    var aRun = runStartingAt(val, end, ch);            // 选区右侧紧邻
+    var iRun = runStartingAt(sel, 0, ch);              // 选区内部左端
+    var jRun = runEndingAt(sel, sel.length, ch);       // 选区内部右端
+
+    // 每侧该删多少：外侧 run 与内侧 run 取其一（外侧优先，因为它更确定）
+    var cutL = 0, cutR = 0;
+    var outsideL = false, outsideR = false;
+    if (bRun.len >= level) { cutL = level; outsideL = true; }
+    else if (iRun.len >= level) { cutL = level; }
+    if (aRun.len >= level) { cutR = level; outsideR = true; }
+    else if (jRun.len >= level) { cutR = level; }
+
+    if (cutL > 0 || cutR > 0) {
+      /* 外侧：从选区之外删；内侧：从选区之内删。
+         两者相加即为新文本的拼接位置，正文永远不会被吞。 */
+      var keepFrom = start + (outsideL ? 0 : cutL);
+      var keepTo = end - (outsideR ? 0 : cutR);
+      if (keepTo < keepFrom) keepTo = keepFrom;
+      var dropStart = outsideL ? start - cutL : start;
+      var dropEnd = outsideR ? end + cutR : end;
+      var kept = val.slice(keepFrom, keepTo);
+      var out = val.slice(0, dropStart) + kept + val.slice(dropEnd);
+      out = repairMarkerRuns(out);
+      applyValue(out, dropStart, dropStart + kept.length);
       source.focus();
       return;
     }
 
-    // 情形 B：选区本身已含标记 → 去掉
-    if (sel.length >= prefix.length + suffix.length &&
-        sel.slice(0, prefix.length) === prefix && sel.slice(-suffix.length) === suffix) {
-      var bare = sel.slice(prefix.length, sel.length - suffix.length);
-      applyValue(val.slice(0, start) + bare + val.slice(end), start, start + bare.length);
-      source.focus();
-      return;
-    }
-
+    /* 未加过格式：套一层 */
     var body = sel || placeholder || '';
     var lead = '', trail = '';
-    // 仅对强调类标记做空白外移（代码块等块级插入不受影响）
     if (sel && /^[\s\u3000]/.test(body)) {
       var lm = body.match(/^[\s\u3000]+/);
       lead = lm[0]; body = body.slice(lead.length);
@@ -313,11 +361,12 @@
       var tm = body.match(/[\s\u3000]+$/);
       trail = tm[0]; body = body.slice(0, body.length - trail.length);
     }
-    // 若选区全是空白，则退化为占位文本，避免产生空标记
     if (!body) body = placeholder || '';
 
     var replacement = lead + prefix + body + suffix + trail;
-    applyValue(val.slice(0, start) + replacement + val.slice(end),
+    var newVal = val.slice(0, start) + replacement + val.slice(end);
+    newVal = repairMarkerRuns(newVal);
+    applyValue(newVal,
       start + lead.length + prefix.length,
       start + lead.length + prefix.length + body.length);
     source.focus();
@@ -1005,25 +1054,22 @@
     requestAnimationFrame(function () { syncing = false; });
   });
 
-  /* ---------------- 版本号（唯一来源：VERSION 文件） ---------------- */
-  function loadVersion() {
+  /* ---------------- 版本号 ----------------
+     直接用硬编码版本常量，不再依赖外部文件或构建脚本。
+     方案号形如 `重构.修复.优化`，即「重构轮次 · 修复轮次 · 优化轮次」。 */
+  var VERSION = '2.0.0';
+  var VERSION_LABEL = '重构 2 · 修复 0 · 优化 0';
+  function initVersion() {
     var el = $('#appVersion');
     if (!el) return;
-    fetch('VERSION', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.text() : null; })
-      .then(function (txt) {
-        var v = (txt || '').trim();
-        if (!/^\d+\.\d+\.\d+$/.test(v)) return; // 离线打开时文件不可读，保留占位
-        el.textContent = 'v' + v;
-        el.title = '墨记 Mojot v' + v;
-      })
-      .catch(function () { /* file:// 或离线场景：静默保留 */ });
+    el.textContent = 'v' + VERSION;
+    el.title = '墨记 Mojot v' + VERSION + '（' + VERSION_LABEL + '）';
   }
 
   /* ---------------- 启动 ---------------- */
   function init() {
     load();
-    loadVersion();
+    initVersion();
     document.documentElement.dataset.theme = state.theme;
     applyView(state.view);
     // applyView 在分栏时会恢复比例；此处不再重复设置，避免覆盖视图模式

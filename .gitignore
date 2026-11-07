@@ -85,6 +85,5 @@ design-studio/
 *.pak
 *.cache
 
-# ---- 唯一例外：最终交付的 Windows 可执行文件 ----
-# 仅放行仓库根目录下、明确命名的交付 exe
-!Mojot-Markdown.exe
+# ---- 不再有任何例外：本仓库不托管任何二进制文件 ----
+# Windows 启动器由使用者按 README 的说明本地编译，产物被本文件忽略。

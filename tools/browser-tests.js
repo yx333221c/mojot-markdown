@@ -227,7 +227,7 @@
   // 问题3：版本号来自 VERSION，不再是 v1.0.0
   const verEl = document.querySelector('#appVersion');
   ok('问题3：版本号元素存在且有值', !!verEl && /\d+\.\d+\.\d+/.test(verEl.textContent), verEl ? verEl.textContent : '');
-  ok('问题3：版本号已更新（非 v1.0.0）', verEl && verEl.textContent.trim() !== 'v1.0.0', verEl ? verEl.textContent : '');
+  ok('问题3：版本号已更新（非 v1.0.0）', verEl && verEl.textContent.trim() !== 'v1.0.0' && verEl.textContent.trim() === 'v2.0.0', verEl ? verEl.textContent : '');
 
   // 问题4：导出的 HTML 不锁滚动（检查导出样式不含 100vh / overflow:hidden）
   // 通过导出函数的产物特征判断：抓取 blob 内容不便，改为检查文档级常量
@@ -265,6 +265,50 @@
   document.querySelector('.toolbar [data-fmt="italic"]').click();
   ok('问题7：粗体内加斜体不吞星号', src.value === '**_组合格式_**', src.value);
   ok('问题7：粗斜体同时渲染', !!prev.querySelector('strong em'), prev.innerHTML.slice(0, 120));
+
+  // ========== 第三轮反馈 ==========
+
+  // 反馈1：源码里已存在 ****，无论从源码还是预览操作，都不应再增长
+  const has4 = (s) => /\*{4}/.test(s);
+  src.value = '****Markdown 源码****，右侧实**'; src.dispatchEvent(new Event('input', { bubbles: true }));
+  // 在源码里选中全部（含星号）点加粗
+  src.focus(); src.setSelectionRange(0, src.value.length);
+  document.querySelector('.toolbar [data-fmt="bold"]').click();
+  ok('三轮1：源码含****时全选加粗不产生四星', !has4(src.value), src.value.slice(0, 40));
+  ok('三轮1：后续正文未被吞', src.value.includes('右侧实'), src.value.slice(0, 60));
+
+  // 预览里选中纯文字，反复点三次，星号数不增长
+  src.value = '这是测试文本，后面还有内容。'; src.dispatchEvent(new Event('input', { bubbles: true }));
+  for (let i = 0; i < 3; i++) {
+    const tgt = prev.querySelector('strong') ? prev.querySelector('strong').firstChild : prev.querySelector('p').firstChild;
+    const rr = document.createRange(); rr.setStart(tgt, 0); rr.setEnd(tgt, tgt.nodeValue.length);
+    domSel.removeAllRanges(); domSel.addRange(rr);
+    prev.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    document.querySelector('.bubble [data-fmt="bold"]').click();
+  }
+  ok('三轮1：预览连点三次无四星', !has4(src.value), src.value);
+  ok('三轮1：连点三次后正文完整', src.value.includes('后面还有内容'), src.value);
+  domSel.removeAllRanges();
+
+  // 粗斜体混合 ***text*** 场景：点加粗应只移除粗体层，保留斜体
+  src.value = '***文本***后续'; src.dispatchEvent(new Event('input', { bubbles: true }));
+  const emN = prev.querySelector('em');
+  if (emN && emN.firstChild) {
+    const rr = document.createRange(); rr.setStart(emN.firstChild, 0); rr.setEnd(emN.firstChild, emN.firstChild.nodeValue.length);
+    domSel.removeAllRanges(); domSel.addRange(rr);
+    prev.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    document.querySelector('.bubble [data-fmt="bold"]').click();
+    ok('三轮1：***文本*** 去粗体保留斜体', /^\*文本\*后续/.test(src.value), src.value);
+    domSel.removeAllRanges();
+  } else {
+    ok('三轮1：***文本*** 去粗体保留斜体', false, '未渲染出 em');
+  }
+
+  // 反馈2：版本号硬编码为 2.0.0，不依赖外部文件
+  const vsEl = document.querySelector('#appVersion');
+  ok('三轮2：版本号硬编码 v2.0.0', vsEl && vsEl.textContent.trim() === 'v2.0.0', vsEl ? vsEl.textContent : '');
+  ok('三轮2：页面不再请求 VERSION 文件',
+     !Array.from(document.querySelectorAll('script')).some(s => /VERSION/.test(s.src)));
 
   // 反馈 1：渲染引擎暴露 flattenLine
   ok('反馈1：渲染引擎暴露 flattenLine', typeof window.MojotMarkdown.flattenLine === 'function');
