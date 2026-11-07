@@ -267,22 +267,35 @@
   /* ---------------- 选区格式命令（核心） ----------------
      强调标记的闭合侧不能紧跟空白（CommonMark 规则），否则无法渲染。
      因此加格式时自动把选区的首尾空白移到标记「外面」：
-       「 文本 」 → 「 **文本** 」，既保留原空白又保证格式生效。 */
+       「 文本 」 → 「 **文本** 」，既保留原空白又保证格式生效。
+
+     另一种常见情况：预览区映射回来的选区可能「少包一层」标记
+     （例如源码是 `**文本**`，映射得到的是 `文本`），导致再加斜体
+     时变成 `***文本***`。`widenToMarkers` 已在映射阶段把外层标记
+     纳入选区，这里只需按「选区外紧邻成对标记 → 取消」判定即可。   */
   function wrapSelection(prefix, suffix, placeholder) {
     var start = source.selectionStart, end = source.selectionEnd;
-    var val = source.value, sel = val.slice(start, end);
+    var val = source.value;
+    var sel = val.slice(start, end);
 
-    // 已包裹 → 取消包裹（切换）
-    if (sel.length >= prefix.length + suffix.length &&
-        val.slice(start - prefix.length, start) === prefix &&
-        val.slice(end, end + suffix.length) === suffix) {
-      var newVal = val.slice(0, start - prefix.length) + sel + val.slice(end + suffix.length);
-      applyValue(newVal, start - prefix.length, end - prefix.length);
+    // 情形 A：选区外紧邻「成对的同类标记」→ 取消（切换）
+    // 例如源码 `**文本**` 且选区是 `文本`，或选区就是 `**文本**`。
+    var ch = prefix.charAt(0);
+    var openRun = val.slice(0, start).match(new RegExp('(\\' + ch + '+)')) ? 
+      val.slice(0, start).match(new RegExp('(\\' + ch + '+)'))[1] : '';
+    var closeRun = val.slice(end).match(new RegExp('^(\\' + ch + '+)')) ?
+      val.slice(end).match(new RegExp('^(\\' + ch + '+)'))[1] : '';
+    if (openRun && closeRun && openRun.length >= prefix.length && closeRun.length >= prefix.length) {
+      var strip = prefix.length; // 粗体 2、斜体 1、删除线 2、代码 1
+      var newVal = val.slice(0, start - strip) + sel + val.slice(end + strip);
+      applyValue(newVal, start - strip, end - strip);
       source.focus();
       return;
     }
-    // 选区本身已含标记 → 去掉
-    if (sel.slice(0, prefix.length) === prefix && sel.slice(-suffix.length) === suffix) {
+
+    // 情形 B：选区本身已含标记 → 去掉
+    if (sel.length >= prefix.length + suffix.length &&
+        sel.slice(0, prefix.length) === prefix && sel.slice(-suffix.length) === suffix) {
       var bare = sel.slice(prefix.length, sel.length - suffix.length);
       applyValue(val.slice(0, start) + bare + val.slice(end), start, start + bare.length);
       source.focus();
@@ -387,19 +400,63 @@
       if (charOff <= skip + len) {
         var local = Math.max(0, Math.min(len, charOff - skip));
         var mp = flats[j].flat.map;
-        var col = local < mp.length ? mp[local] : lines[flats[j].line].length;
+        /* 关键：偏移落在该行末尾时，要落在「最后一个可读字符之后」，
+           而不是回退到整行长度（整行长度含 ** 等标记，会把选区撑出标记外）。 */
+        var col;
+        if (local < mp.length) {
+          col = mp[local];
+        } else if (mp.length) {
+          col = mp[mp.length - 1] + 1;
+        } else {
+          col = lines[flats[j].line].length;
+        }
         return { line: flats[j].line, col: col };
       }
       /* 跨行时，渲染中的软换行 / 列表项之间的分隔各算 1 个字符 */
       skip += len + 1;
     }
     var last = flats[flats.length - 1];
-    return { line: last.line, col: lines[last.line].length };
+    var lastMap = last.flat.map;
+    return {
+      line: last.line,
+      col: lastMap.length ? lastMap[lastMap.length - 1] + 1 : lines[last.line].length
+    };
   }
 
   function pointToAbsolute(p) {
     if (!p) return null;
     return lineStartOffset(source.value, p.line) + p.col;
+  }
+
+  /* 把源码选区兑换成「包住外层同类标记」的形式。
+     预览区选中的是渲染后的纯文本，映射回来时不含 `**`/`_` 等标记；
+     若不扩展，再点一次格式会叠加成 `****text****` 或 `***text***`。
+     这里向外吞并紧邻的成对标记，使「再点一次」正确触发取消。 */
+  function widenToMarkers(start, end) {
+    var val = source.value;
+    // 选区本身已含标记（用户直接选了 `**text**` 或 `_text_`）→ 保持原样，
+    // 交给 wrapSelection 的「选区已含标记 → 去掉」分支处理。
+    if (/\*\*|__|~~|`/.test(val.slice(start, end))) return { start: start, end: end };
+
+    var grew = true, guard = 0;
+    while (grew && guard++ < 4) {
+      grew = false;
+      var before = val.slice(0, start), after = val.slice(end);
+
+      var openM = before.match(/(\*\*|__|~~|`|_|\*)$/);
+      var closeM = after.match(/^(\*\*|__|~~|`|_|\*)/);
+      if (!openM || !closeM) break;
+
+      var o = openM[1], c = closeM[1];
+      // 只吞并同字符的成对标记（* 配 *，_ 配 _，` 配 `），
+      // 且两侧长度都至少 1，避免把相邻不同格式的标记混为一谈。
+      if (o.charAt(0) === c.charAt(0) && o.length === c.length) {
+        start -= o.length;
+        end += c.length;
+        grew = true;
+      }
+    }
+    return { start: start, end: end };
   }
 
   /* 读取用户当前选区：优先取预览区（并换算到源码），否则用 textarea 自身 */
@@ -414,7 +471,10 @@
         if (a && b) {
           var pa = pointToAbsolute(a), pb = pointToAbsolute(b);
           if (pa != null && pb != null && pa !== pb) {
-            return { start: Math.min(pa, pb), end: Math.max(pa, pb), fromPreview: true };
+            var lo = Math.min(pa, pb), hi = Math.max(pa, pb);
+            // 关键：把已存在的格式标记一并纳入选区，保证「再点一次」可取消
+            var w = widenToMarkers(lo, hi);
+            return { start: w.start, end: w.end, fromPreview: true, original: { start: lo, end: hi } };
           }
         }
       }
@@ -504,7 +564,7 @@
 
   var FMT = {
     bold:   function () { wrapSelection('**', '**', '粗体文本'); },
-    italic: function () { wrapSelection('*', '*', '斜体文本'); },
+    italic: function () { wrapSelection('_', '_', '斜体文本'); },
     strike: function () { wrapSelection('~~', '~~', '删除线文本'); },
     code:   function () { wrapSelection('`', '`', 'code'); },
     link:   function () {
@@ -581,10 +641,16 @@
     var line = source.value.slice(ls, le);
     var before = source.value.slice(0, pos);
     var after = source.value.slice(pos);
-    var pairs = { bold: ['**', '**'], italic: ['*', '*'], strike: ['~~', '~~'], code: ['`', '`'] };
+    var pairs = { bold: ['**', '**'], italic: ['_', '_'], strike: ['~~', '~~'], code: ['`', '`'] };
     Object.keys(pairs).forEach(function (k) {
       var p = pairs[k][0], s = pairs[k][1];
       var on = before.slice(-p.length) === p && after.slice(0, s.length) === s;
+      // 斜体同时兼容 *x* 写法（旧文档里的星号斜体仍点亮按钮）
+      if (!on && k === 'italic') {
+        var bi = before.lastIndexOf('*'), ai = after.indexOf('*');
+        on = bi !== -1 && ai !== -1 && before.slice(bi - 1, bi) !== '*' &&
+             after.slice(ai + 1, ai + 2) !== '*';
+      }
       $$('[data-fmt="' + k + '"]').forEach(function (b) { b.classList.toggle('is-active', on); });
     });
     $$('[data-menu="heading"] .tbtn-label').forEach(function (el) {
@@ -720,14 +786,74 @@
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
+  /* 导出用的纯文档样式：不复制应用外壳 CSS
+     （外壳里有 html,body{height:100%;overflow:hidden} 会把导出页锁死无法滚动）。
+     只保留文档排版 + 引用底色等，打印时也能正确分页。                    */
+  function docStyles(theme) {
+    var dark = theme === 'dark';
+    var c = dark ? {
+      bg: '#171a22', fg: '#e6e8ee', fg2: '#b9bec9', muted: '#7e8595',
+      line: '#2a2f3b', card: '#1c202a', code: '#20242f', inline: '#262a36',
+      inlineInk: '#f08ab8', accent: '#7a7af5', ok: '#47c98a',
+      accentSoft: 'rgba(122,122,245,0.14)'
+    } : {
+      bg: '#fbfaf8', fg: '#22242b', fg2: '#454a55', muted: '#8b8f99',
+      line: '#e9e6e0', card: '#ffffff', code: '#f0eee8', inline: '#efece4',
+      inlineInk: '#c2417a', accent: '#5b5bd6', ok: '#2fa36b',
+      accentSoft: 'rgba(91,91,214,0.10)'
+    };
+    return [
+      '* { box-sizing: border-box; }',
+      'html, body { margin: 0; padding: 0; height: auto; overflow: visible; }',
+      'body { background: ' + c.bg + '; color: ' + c.fg + ';',
+      '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;',
+      '  font-size: 15px; line-height: 1.78; padding: 40px 20px; }',
+      '.markdown-body { max-width: 760px; margin: 0 auto; }',
+      'h1,h2,h3 { color: ' + c.fg + '; line-height: 1.35; font-weight: 700; }',
+      'h1 { font-size: 27px; letter-spacing: -.4px; margin: 0 0 14px; padding-bottom: 14px; border-bottom: 1px solid ' + c.line + '; }',
+      'h2 { font-size: 19px; margin: 30px 0 12px; padding-left: 11px; border-left: 3px solid ' + c.accent + '; }',
+      'h3 { font-size: 16px; margin: 22px 0 8px; }',
+      'p { margin: 0 0 13px; }',
+      'strong { font-weight: 700; color: ' + c.fg + '; }',
+      'em { font-style: italic; }',
+      'del { color: ' + c.muted + '; }',
+      'a { color: ' + c.accent + '; text-decoration: none; border-bottom: 1px solid ' + c.accent + '; }',
+      'code { font-family: "JetBrains Mono", Consolas, monospace; font-size: .86em;',
+      '  background: ' + c.inline + '; color: ' + c.inlineInk + '; padding: 2px 5px; border-radius: 4px; }',
+      'ul, ol { padding-left: 24px; margin: 0 0 15px; }',
+      'li { margin: 4px 0; } li::marker { color: ' + c.accent + '; }',
+      /* 引用块：保留底色 + 左侧竖线，与二级标题（只有竖线、无底色）明确区分 */
+      'blockquote { margin: 16px 0; padding: 10px 16px; background: ' + c.accentSoft + ';',
+      '  border-left: 3px solid ' + c.accent + '; border-radius: 0 6px 6px 0; color: ' + c.fg2 + '; }',
+      'blockquote p { margin: 0; font-style: normal; }',
+      'table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 13px; }',
+      'th, td { padding: 9px 13px; text-align: left; border-bottom: 1px solid ' + c.line + '; }',
+      'th { background: ' + c.card + '; font-weight: 600; font-size: 12px; color: ' + c.fg2 + '; }',
+      'tr:last-child td { border-bottom: 0; }',
+      'pre { position: relative; margin: 16px 0 20px; padding: 16px 18px; background: ' + c.code + ';',
+      '  border: 1px solid ' + c.line + '; border-radius: 10px; overflow-x: auto;',
+      '  font-family: "JetBrains Mono", Consolas, monospace; font-size: 12.5px; line-height: 1.7; }',
+      'pre code { background: none; padding: 0; color: ' + c.fg2 + '; font-size: inherit; }',
+      '.code-lang { position: absolute; top: 0; right: 0; padding: 3px 10px;',
+      '  border-radius: 0 10px 0 6px; background: ' + c.accentSoft + '; color: ' + c.accent + ';',
+      '  font-family: "JetBrains Mono", Consolas, monospace; font-size: 10.5px; font-weight: 600; }',
+      'img { max-width: 100%; height: auto; border-radius: 6px; }',
+      'hr { border: 0; border-top: 1px solid ' + c.line + '; margin: 26px 0; }',
+      '.task-list { list-style: none; padding-left: 4px; }',
+      '.task-list li { display: flex; align-items: center; gap: 9px; }',
+      '.task-list input { accent-color: ' + c.accent + '; width: 14px; height: 14px; margin: 0; }',
+      'pre[data-language]:not([data-language=""]) { padding-top: 24px; }'
+    ].join('\n');
+  }
+
   function exportHtml() {
-    var css = Array.prototype.map.call(document.styleSheets, function (s) {
-      try { return Array.prototype.map.call(s.cssRules, function (r) { return r.cssText; }).join('\n'); }
-      catch (e) { return ''; }
-    }).join('\n');
-    var html = '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="utf-8" />' +
-      '<title>' + MD.escapeHtml(titleInput.value) + '</title><style>' + css + '</style></head>' +
-      '<body style="background:var(--paper);padding:40px 0"><article class="markdown-body">' +
+    var css = docStyles(state.theme);
+    var html = '<!DOCTYPE html>\n<html lang="zh-CN" data-theme="' + state.theme + '"><head>' +
+      '<meta charset="utf-8" />' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0" />' +
+      '<title>' + MD.escapeHtml(titleInput.value) + '</title>' +
+      '<style>\n' + css + '\n</style></head>' +
+      '<body><article class="markdown-body">' +
       MD.render(source.value) + '</article></body></html>';
     download(titleInput.value + '.html', html, 'text/html;charset=utf-8');
   }
@@ -735,16 +861,28 @@
     if (kind === 'md') { download(titleInput.value + '.md', source.value, 'text/markdown;charset=utf-8'); toastMsg('已导出 .md 源文件'); }
     else if (kind === 'html') { exportHtml(); toastMsg('已导出 HTML'); }
     else if (kind === 'pdf') {
+      // 用同一套纯文档样式排版，再打印；用户在打印对话框里选「另存为 PDF」，
+      // 并勾选「背景图形」以保留引用底色。页眉页脚由打印对话框的「边距」等控制。
       var w = window.open('', '_blank');
       if (!w) { toastMsg('请允许弹出窗口以打印为 PDF'); return; }
-      w.document.write('<html><head><title>' + MD.escapeHtml(titleInput.value) + '</title>' +
-        '<link rel="stylesheet" href="' + location.href.replace(/[^/]*$/, '') + 'css/token.css" />' +
-        '<link rel="stylesheet" href="' + location.href.replace(/[^/]*$/, '') + 'css/style.css" />' +
-        '<style>body{background:#fff;padding:32px}.markdown-body{max-width:760px;margin:0 auto}</style></head><body>' +
-        '<article class="markdown-body">' + MD.render(source.value) + '</article></body></html>');
+      var css = docStyles(state.theme) +
+        '\n@page { margin: 14mm 12mm; }' +
+        '\n@media print {' +
+        '\n  body { padding: 0 !important; background: #fff !important; color: #22242b !important; }' +
+        '\n  h1, h2, h3, strong, p, li, td, th { color: #22242b !important; }' +
+        '\n  blockquote { background: rgba(91,91,214,.10) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
+        '\n  pre, code, th, .code-lang { -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
+        '\n  pre, table, blockquote, img { break-inside: avoid; page-break-inside: avoid; }' +
+        '\n  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }' +
+        '\n}';
+      w.document.write('<html lang="zh-CN"><head><meta charset="utf-8" />' +
+        '<title>' + MD.escapeHtml(titleInput.value) + '</title><style>' + css + '</style></head>' +
+        '<body><article class="markdown-body">' + MD.render(source.value) + '</article></body></html>');
       w.document.close();
-      setTimeout(function () { w.print(); }, 600);
-      toastMsg('已打开打印窗口，可另存为 PDF');
+      w.onload = function () { setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 200); };
+      // onload 已触发过的情况兜底
+      setTimeout(function () { try { w.focus(); if (w.document.readyState === 'complete') w.print(); } catch (e) {} }, 800);
+      toastMsg('已打开打印窗口：取消勾选页眉页脚、勾选背景图形后另存为 PDF');
     } else if (kind === 'copy') {
       copyText(source.value, 'Markdown 已复制到剪贴板');
     }
@@ -867,9 +1005,25 @@
     requestAnimationFrame(function () { syncing = false; });
   });
 
+  /* ---------------- 版本号（唯一来源：VERSION 文件） ---------------- */
+  function loadVersion() {
+    var el = $('#appVersion');
+    if (!el) return;
+    fetch('VERSION', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (txt) {
+        var v = (txt || '').trim();
+        if (!/^\d+\.\d+\.\d+$/.test(v)) return; // 离线打开时文件不可读，保留占位
+        el.textContent = 'v' + v;
+        el.title = '墨记 Mojot v' + v;
+      })
+      .catch(function () { /* file:// 或离线场景：静默保留 */ });
+  }
+
   /* ---------------- 启动 ---------------- */
   function init() {
     load();
+    loadVersion();
     document.documentElement.dataset.theme = state.theme;
     applyView(state.view);
     // applyView 在分栏时会恢复比例；此处不再重复设置，避免覆盖视图模式

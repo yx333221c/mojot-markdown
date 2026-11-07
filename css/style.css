@@ -127,7 +127,7 @@ svg { display: block; }
 }
 .tbtn:hover { background: var(--chrome-hover); color: #fff; }
 .tbtn:active { transform: scale(.9); }
-.tbtn.is-active { background: var(--accent-soft); color: #a9a6ff; }
+.tbtn.is-active { background: var(--accent-soft); color: var(--accent); }
 .tbtn b { font-weight: 700; }
 .tbtn i { font-family: var(--font-serif); font-style: italic; font-weight: 600; }
 .tbtn s { text-decoration-thickness: 1.5px; }
@@ -166,11 +166,11 @@ kbd {
 }
 .dropdown button:hover { background: var(--chrome-hover); }
 .dropdown kbd { margin-left: auto; }
-.dropdown b { font-weight: 600; color: #a9a6ff; }
+.dropdown b { font-weight: 600; color: var(--accent); }
 .dd-line { height: 1px; background: var(--chrome-line); margin: 5px 4px; }
-.dd-h1 { font-weight: 800; font-size: 14px; width: 22px; color: #a9a6ff; }
-.dd-h2 { font-weight: 700; font-size: 12px; width: 22px; color: #a9a6ff; }
-.dd-h3 { font-weight: 600; font-size: 11px; width: 22px; color: #a9a6ff; }
+.dd-h1 { font-weight: 800; font-size: 14px; width: 22px; color: var(--accent); }
+.dd-h2 { font-weight: 700; font-size: 12px; width: 22px; color: var(--accent); }
+.dd-h3 { font-weight: 600; font-size: 11px; width: 22px; color: var(--accent); }
 .dd-p { font-size: 14px; width: 22px; color: var(--chrome-muted); }
 
 /* ===================== 工作区 ===================== */
@@ -478,15 +478,24 @@ kbd {
   body { background: #fff !important; }
 }
 
-/* ===================== 视图模式 ===================== */
-/* 仅编辑 */
+/* ===================== 视图模式 =====================
+   关键：三个 grid 项必须始终留在 grid 流里（否则剩下的面板会被
+   塞进第 1 个 0 宽列，预览模式就会整片空白）。隐藏用
+   visibility:hidden + 零宽列，而不是 display:none。            */
 .workspace[data-view='edit'] { grid-template-columns: 1fr 0 0; }
-.workspace[data-view='edit'] .pane-preview,
-.workspace[data-view='edit'] .splitter { display: none; }
-/* 仅预览 */
 .workspace[data-view='preview'] { grid-template-columns: 0 0 1fr; }
-.workspace[data-view='preview'] .pane-editor,
-.workspace[data-view='preview'] .splitter { display: none; }
+
+.workspace[data-view='edit'] .pane-preview,
+.workspace[data-view='preview'] .pane-editor {
+  visibility: hidden;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+  min-width: 0;
+}
+/* 分栏条在单栏视图下彻底收起（不占列宽） */
+.workspace[data-view='edit'] .splitter,
+.workspace[data-view='preview'] .splitter { visibility: hidden; }
 
 /* ===================== 响应式 ===================== */
 @media (max-width: 1100px) {
@@ -505,11 +514,12 @@ kbd {
   .source-input { padding-left: 10px; font-size: 11.5px; }
 }
 @media (max-width: 620px) {
-  .workspace { grid-template-columns: 1fr 0 0; }
-  .pane-preview { display: none; }
+  /* 小屏默认只显示源码；预览模式由 data-view='preview' 规则切换 */
+  .workspace[data-view='split'] { grid-template-columns: 1fr 0 0; }
+  .workspace[data-view='split'] .pane-preview { visibility: hidden; overflow: hidden; pointer-events: none; min-width: 0; }
   .workspace[data-view='preview'] { grid-template-columns: 0 0 1fr; }
-  .workspace[data-view='preview'] .pane-preview { display: flex; }
-  .workspace[data-view='preview'] .pane-editor { display: none; }
+  .workspace[data-view='preview'] .pane-preview { visibility: visible; }
+  .workspace[data-view='preview'] .pane-editor { visibility: hidden; overflow: hidden; pointer-events: none; min-width: 0; }
   .view-btn { padding: 5px 8px; }
   .tb-div { margin: 0 3px; }
   .tb-right { display: none; }

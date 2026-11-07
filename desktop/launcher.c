@@ -28,7 +28,7 @@
 #include <string.h>
 
 #define APP_NAME   L"墨记 Mojot"
-#define APP_VER    L"v1.0.0"
+#define APP_VER    L"v1.1.0"
 #define PORT_START 17777
 #define PORT_TRIES 20
 #define BUF_SIZE   (64 * 1024)

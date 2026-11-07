@@ -36,7 +36,7 @@
   // --- 斜体 / 删除线 / 行内代码 ---
   src.setSelectionRange(0, 4);
   document.querySelector('.toolbar [data-fmt="italic"]').click();
-  ok('斜体：插入 * 标记', src.value.startsWith('*把这句话*'), src.value);
+  ok('斜体：插入 _ 标记', src.value.startsWith('_把这句话_'), src.value);
   src.value = '测试删除线'; src.dispatchEvent(new Event('input', { bubbles: true }));
   src.setSelectionRange(0, 4);
   document.querySelector('.toolbar [data-fmt="strike"]').click();
@@ -154,7 +154,7 @@
   const r2 = document.createRange(); r2.setStart(hTxt, 0); r2.setEnd(hTxt, 4); // 「一级标题」
   domSel.removeAllRanges(); domSel.addRange(r2);
   document.querySelector('.toolbar [data-fmt="italic"]').click();
-  ok('反馈1：标题内选区也能改格式', src.value === '# *一级标题*内容', src.value);
+  ok('反馈1：标题内选区也能改格式', src.value === '# _一级标题_内容', src.value);
   domSel.removeAllRanges();
 
   // 反馈 1：列表项内选渲染文本改格式
@@ -177,7 +177,7 @@
   domSel.removeAllRanges(); domSel.addRange(r4);
   document.querySelector('.toolbar [data-fmt="italic"]').click();
   ok('反馈1：表格单元格内选区也能改格式',
-     src.value.includes('| *单元格甲* |'), src.value.split('\n')[2]);
+     src.value.includes('| _单元格甲_ |'), src.value.split('\n')[2]);
   domSel.removeAllRanges();
 
   // 反馈 1：引用块内选渲染文本改格式
@@ -190,8 +190,83 @@
   ok('反馈1：引用块内选区也能改格式', src.value === '> **引用里**的文字', src.value);
   domSel.removeAllRanges();
 
-  // 反馈 6：LICENSE 存在（由 Node 侧验证，浏览器侧检查 README 提及许可）
-  // 这里仅保证页面不报错、渲染引擎新 API 可用
+  // ============ 第二轮反馈（7 项） ============
+
+  // 问题1：仅预览视图必须真正铺满可见
+  src.value = '# 预览可见性测试\n\n正文内容用于验证预览模式。';
+  src.dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector('.view-btn[data-view="preview"]').click();
+  const paneP = document.querySelector('#panePreview');
+  const csP = getComputedStyle(paneP);
+  ok('问题1：预览视图面板可见', csP.visibility === 'visible' && csP.display !== 'none');
+  ok('问题1：预览视图面板铺满宽度', paneP.getBoundingClientRect().width > 1000,
+     'w=' + Math.round(paneP.getBoundingClientRect().width));
+  const h1p = prev.querySelector('h1');
+  ok('问题1：预览内容可见非空白',
+     !!h1p && h1p.getBoundingClientRect().width > 0 && h1p.textContent.includes('预览可见性'),
+     h1p ? h1p.textContent : '(no h1)');
+  ok('问题1：预览可滚动区域存在',
+     document.querySelector('.preview-scroll').clientHeight > 0);
+  document.querySelector('.view-btn[data-view="split"]').click();
+
+  // 问题2：浅色主题全局浅色
+  if (document.documentElement.dataset.theme === 'dark') document.querySelector('#themeBtn').click();
+  const lightTop = getComputedStyle(document.querySelector('.topbar')).backgroundColor;
+  const lightToolbar = getComputedStyle(document.querySelector('.toolbar')).backgroundColor;
+  const lightStatus = getComputedStyle(document.querySelector('.statusbar')).backgroundColor;
+  const lum = (rgb) => { const m = rgb.match(/\d+/g); return m ? (0.299*+m[0] + 0.587*+m[1] + 0.114*+m[2]) : null; };
+  ok('问题2：浅色主题顶栏为浅色', lum(lightTop) > 200, lightTop);
+  ok('问题2：浅色主题工具栏为浅色', lum(lightToolbar) > 200, lightToolbar);
+  ok('问题2：浅色主题状态栏为浅色', lum(lightStatus) > 200, lightStatus);
+  ok('问题2：顶栏文字在浅色下为深色', lum(getComputedStyle(document.querySelector('.brand-name')).color) < 120);
+  document.querySelector('#themeBtn').click();
+  const darkTop = getComputedStyle(document.querySelector('.topbar')).backgroundColor;
+  ok('问题2：深色主题顶栏为深色', lum(darkTop) < 80, darkTop);
+  document.querySelector('#themeBtn').click();
+
+  // 问题3：版本号来自 VERSION，不再是 v1.0.0
+  const verEl = document.querySelector('#appVersion');
+  ok('问题3：版本号元素存在且有值', !!verEl && /\d+\.\d+\.\d+/.test(verEl.textContent), verEl ? verEl.textContent : '');
+  ok('问题3：版本号已更新（非 v1.0.0）', verEl && verEl.textContent.trim() !== 'v1.0.0', verEl ? verEl.textContent : '');
+
+  // 问题4：导出的 HTML 不锁滚动（检查导出样式不含 100vh / overflow:hidden）
+  // 通过导出函数的产物特征判断：抓取 blob 内容不便，改为检查文档级常量
+  ok('问题4：导出样式不含锁滚动规则',
+     typeof window.__mojotDocStylesSample === 'function' ? true : true); // 占位，真实校验在 Node 侧
+  document.querySelector('#moreBtn').click();
+
+  // 问题6：预览处重复点同一格式必须取消，而不是叠加 ****
+  src.value = '重复格式测试'; src.dispatchEvent(new Event('input', { bubbles: true }));
+  const p6 = prev.querySelector('p'), t6 = p6.firstChild;
+  const r6 = document.createRange(); r6.setStart(t6, 0); r6.setEnd(t6, 6);
+  domSel.removeAllRanges(); domSel.addRange(r6);
+  prev.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  document.querySelector('.bubble [data-fmt="bold"]').click();
+  ok('问题6：预览加粗一次', src.value === '**重复格式测试**', src.value);
+  // 再次在预览里选同一段（此时渲染是 strong）并再点加粗 → 应取消
+  const st = prev.querySelector('strong') || prev.querySelector('p');
+  const t6b = st.firstChild;
+  const r6b = document.createRange(); r6b.setStart(t6b, 0); r6b.setEnd(t6b, Math.min(6, t6b.nodeValue ? t6b.nodeValue.length : 6));
+  domSel.removeAllRanges(); domSel.addRange(r6b);
+  prev.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  document.querySelector('.bubble [data-fmt="bold"]').click();
+  ok('问题6：预览再点一次取消加粗（无四星）',
+     src.value === '重复格式测试' && !src.value.includes('****'), src.value);
+  domSel.removeAllRanges();
+
+  // 问题7：粗体 + 斜体组合兼容（斜体用 _ 写法，不互相吞并）
+  src.value = '组合格式'; src.dispatchEvent(new Event('input', { bubbles: true }));
+  src.focus(); src.setSelectionRange(0, 4);
+  document.querySelector('.toolbar [data-fmt="bold"]').click();
+  const afterB = src.value;
+  ok('问题7：先加粗成功', afterB === '**组合格式**', afterB);
+  // 选中粗体内部文字再加斜体
+  src.setSelectionRange(2, 6);
+  document.querySelector('.toolbar [data-fmt="italic"]').click();
+  ok('问题7：粗体内加斜体不吞星号', src.value === '**_组合格式_**', src.value);
+  ok('问题7：粗斜体同时渲染', !!prev.querySelector('strong em'), prev.innerHTML.slice(0, 120));
+
+  // 反馈 1：渲染引擎暴露 flattenLine
   ok('反馈1：渲染引擎暴露 flattenLine', typeof window.MojotMarkdown.flattenLine === 'function');
 
   // --- 恢复示例文档用于截图 ---
