@@ -2,7 +2,8 @@
 const { spawn } = require('child_process');
 const http = require('http'); const fs = require('fs'); const os = require('os'); const path = require('path');
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const PORT = 9343, PROFILE = path.join(os.tmpdir(), 'mojot-exp-' + Date.now());
+const { makeProfile } = require('./tmp-profile');
+const PORT = 9343, PROFILE = makeProfile('exp');
 const OUT = path.join(os.tmpdir(), 'mojot-export-check.html');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const getJSON = u => new Promise((res, rej) => http.get(u, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>{try{res(JSON.parse(d))}catch(e){rej(e)}}); }).on('error', rej));

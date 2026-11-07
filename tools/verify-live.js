@@ -10,7 +10,8 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const BROWSER = fs.existsSync(CHROME) ? CHROME : EDGE;
 const PORT = 9334;
 const URL = 'https://yx333221c.github.io/mojot-markdown/';
-const PROFILE = path.join(os.tmpdir(), 'mojot-live-' + Date.now());
+const { makeProfile } = require('./tmp-profile');
+const PROFILE = makeProfile('live');
 const SHOT = process.argv[2] || path.join(__dirname, '.live.png');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));

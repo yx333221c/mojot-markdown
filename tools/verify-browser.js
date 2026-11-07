@@ -15,7 +15,8 @@ const BROWSER = fs.existsSync(CHROME) ? CHROME : EDGE;
 const DEBUG_PORT = 9333;
 const URL = 'http://127.0.0.1:8099/';
 const SHOT = process.argv[2] || path.join(__dirname, '.verify.png');
-const PROFILE = path.join(os.tmpdir(), 'mojot-cdp-' + Date.now());
+const { makeProfile } = require('./tmp-profile');
+const PROFILE = makeProfile('cdp');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function getJSON(url) {
