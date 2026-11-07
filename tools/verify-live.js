@@ -52,23 +52,9 @@ const getJSON = url => new Promise((res, rej) => {
       if (ready) break;
     }
     if (!ready) throw new Error('线上页面未正确初始化');
-    const r = await evaluate(`(function(){
-      const src=document.querySelector('#source'), prev=document.querySelector('#previewBody');
-      const checks={
-        'H1 渲染': !!prev.querySelector('h1'),
-        '表格渲染': !!prev.querySelector('table'),
-        '代码块渲染': !!prev.querySelector('pre code'),
-        '行号对齐': document.querySelectorAll('#gutter span').length===src.value.split('\\n').length,
-        'CSS 已加载': getComputedStyle(document.querySelector('.topbar')).backgroundColor !== 'rgba(0, 0, 0, 0)'
-      };
-      src.value='线上加粗测试'; src.dispatchEvent(new Event('input',{bubbles:true}));
-      src.focus(); src.setSelectionRange(0,4); // 选中「线上加粗」（4 个汉字）
-      document.querySelector('.toolbar [data-fmt="bold"]').click();
-      checks['一键加粗']= src.value==='**线上加粗**测试';
-      checks['预览同步']= !!prev.querySelector('strong');
-      src.value='# 墨记 Mojot\\n\\n线上版本运行正常。'; src.dispatchEvent(new Event('input',{bubbles:true}));
-      return checks;
-    })()`);
+    // 测试体放在独立文件，避免模板字符串与 Markdown 反引号冲突
+    const testExpr = fs.readFileSync(path.join(__dirname, 'live-tests.js'), 'utf8');
+    const r = await evaluate(testExpr);
     let fail = 0;
     Object.keys(r).forEach(k => { console.log((r[k] ? '  PASS  ' : '  FAIL  ') + k); if (!r[k]) fail++; });
     console.log('\n' + (Object.keys(r).length - fail) + ' passed, ' + fail + ' failed');

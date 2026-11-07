@@ -31,7 +31,8 @@
 | `tools/test-render.js` | 渲染引擎单元测试 |
 | `tools/verify-browser.js` | Headless Chrome 端到端交互测试 |
 | `tools/browser-tests.js` | 浏览器内测试用例 |
-| `tools/verify-live.js` | 线上 GitHub Pages 冒烟验证 |
+| `tools/verify-live.js` | 线上 GitHub Pages 冒烟验证（14 项） |
+| `tools/live-tests.js` | 线上页面内测试用例 |
 | `tools/visual-check.js` | 关键元素计算样式核验 |
 | `desktop/launcher.c` | Windows 桌面启动器源码（MinGW 编译） |
 | `Mojot-Markdown.exe` | 预编译的 Windows 启动器，双击后在默认浏览器打开编辑器 |
@@ -62,11 +63,12 @@ node tools/test-render.js                 # 渲染引擎 + XSS 防护 + 行映�
 node tools/serve.js 8099                 # 另开一个终端
 node tools/verify-browser.js             # Headless Chrome 端到端（45 项）
 node tools/visual-check.js               # 关键元素计算样式核验（6 项）
-node tools/verify-live.js                # 线上 GitHub Pages 冒烟验证（7 项）
+node tools/verify-live.js                # 线上 GitHub Pages 冒烟验证（14 项）
 ```
 
-本地全量回归共 **95 项**，覆盖：预览区选渲染文本改格式（段落 / 标题 / 列表 / 表格单元格 / 引用块）、
-空格自动外移、代码块语言标签、引用块正体、示例文档文案、XSS 防护与撤销重做。
+本地全量回归共 **95 项**，线上另有 14 项冒烟验证。覆盖：预览区选渲染文本改格式
+（段落 / 标题 / 列表 / 表格单元格 / 引用块）、空格自动外移、代码块语言标签、
+引用块正体、示例文档文案、XSS 防护与撤销重做。
 
 ## 线上地址
 
