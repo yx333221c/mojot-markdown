@@ -36,7 +36,7 @@
     '| 加粗 | `Ctrl + B` | 已支持 |',
     '| 斜体 | `Ctrl + I` | 已支持 |',
     '| 表格 | — | 已支持 |',
-    '| 协作光标 | — | 规划中 |',
+    '| 本地自动保存 | — | 已支持 |',
     '',
     '## 代码示例',
     '',
@@ -264,7 +264,10 @@
   source.addEventListener('scroll', syncGutterScroll);
   function syncGutterScroll() { gutter.scrollTop = source.scrollTop; }
 
-  /* ---------------- 选区格式命令（核心） ---------------- */
+  /* ---------------- 选区格式命令（核心） ----------------
+     强调标记的闭合侧不能紧跟空白（CommonMark 规则），否则无法渲染。
+     因此加格式时自动把选区的首尾空白移到标记「外面」：
+       「 文本 」 → 「 **文本** 」，既保留原空白又保证格式生效。 */
   function wrapSelection(prefix, suffix, placeholder) {
     var start = source.selectionStart, end = source.selectionEnd;
     var val = source.value, sel = val.slice(start, end);
@@ -287,10 +290,165 @@
     }
 
     var body = sel || placeholder || '';
-    var replacement = prefix + body + suffix;
+    var lead = '', trail = '';
+    // 仅对强调类标记做空白外移（代码块等块级插入不受影响）
+    if (sel && /^[\s\u3000]/.test(body)) {
+      var lm = body.match(/^[\s\u3000]+/);
+      lead = lm[0]; body = body.slice(lead.length);
+    }
+    if (sel && /[\s\u3000]$/.test(body)) {
+      var tm = body.match(/[\s\u3000]+$/);
+      trail = tm[0]; body = body.slice(0, body.length - trail.length);
+    }
+    // 若选区全是空白，则退化为占位文本，避免产生空标记
+    if (!body) body = placeholder || '';
+
+    var replacement = lead + prefix + body + suffix + trail;
     applyValue(val.slice(0, start) + replacement + val.slice(end),
-      start + prefix.length, start + prefix.length + body.length);
+      start + lead.length + prefix.length,
+      start + lead.length + prefix.length + body.length);
     source.focus();
+  }
+
+  /* ============================================================
+   * 预览区选区 → 源码选区（所见即所得地改代码）
+   * 思路：渲染时每个块级元素都带 data-line-start/end；
+   *  选区两端所在块决定源码行范围，再用该行「摊平后的纯文本」
+   *  做对齐，把渲染文本中的字符偏移换算回源码行的字符下标。
+   * ============================================================ */
+  function nearestBlock(node) {
+    while (node && node !== preview) {
+      if (node.nodeType === 1 && node.hasAttribute && node.hasAttribute('data-line-start')) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  function lineStartOffset(value, lineIdx) {
+    var pos = 0;
+    for (var k = 0; k < lineIdx; k++) { pos = value.indexOf('\n', pos) + 1; if (pos <= 0) return value.length; }
+    return pos;
+  }
+
+  /* 在一个块内，计算某文本节点之前的「可读字符数」 */
+  function textOffsetWithin(root, container, offset) {
+    var count = 0, found = false;
+    function walk(node) {
+      if (found) return;
+      if (node.nodeType === 3) {
+        if (node === container) { count += offset; found = true; return; }
+        count += node.nodeValue.length; return;
+      }
+      if (node.nodeType !== 1) return;
+      if (node.tagName === 'IMG') { count += 1; return; }
+      if (node.classList && node.classList.contains('code-lang')) return; // 语言标签不计入
+      for (var c = node.firstChild; c; c = c.nextSibling) { walk(c); if (found) return; }
+    }
+    walk(root);
+    return count;
+  }
+
+  function mapPreviewPoint(container, offset) {
+    var blk = nearestBlock(container.nodeType === 1 ? container : container.parentNode);
+    if (!blk) return null;
+    var ls = +blk.getAttribute('data-line-start');
+    var le = +blk.getAttribute('data-line-end');
+    var lines = source.value.split('\n');
+    if (ls < 0 || le >= lines.length) return null;
+
+    /* 表格单元格：源码里是 `| a | b |`，不能按整行摊平定位，
+       需按 data-col 找到对应单元格的起始下标，再加上单元格内的字符偏移。
+       注意 container 常是文本节点，要先升到元素节点再向上找 td/th。 */
+    var cellNode = container.nodeType === 1 ? container : container.parentNode;
+    while (cellNode && cellNode !== blk &&
+           !(cellNode.hasAttribute && cellNode.hasAttribute('data-col-start'))) {
+      cellNode = cellNode.parentNode;
+    }
+    if (cellNode && cellNode !== blk && cellNode.nodeType === 1 &&
+        cellNode.hasAttribute && cellNode.hasAttribute('data-col-start')) {
+      var startCol = +cellNode.getAttribute('data-col-start');
+      var rawCell = MD.unescapeHtml(cellNode.getAttribute('data-cell-raw') || '');
+      var cellOff = textOffsetWithin(cellNode, container, offset);
+      // 单元格内可能含 `code`、强调标记，用摊平映射跳过这些标记
+      var cellFlat = MD.flattenLine(rawCell);
+      var local = Math.min(cellOff, cellFlat.plain.length);
+      var inner = local < cellFlat.map.length ? cellFlat.map[local] : rawCell.length;
+      return { line: ls, col: startCol + inner };
+    }
+
+    // 收集块内所有源码行的摊平纯文本与位置映射
+    var flats = [];
+    for (var k = ls; k <= le; k++) flats.push({ line: k, flat: MD.flattenLine(lines[k]) });
+
+    var charOff = textOffsetWithin(blk, container, offset);
+    var skip = 0;
+    for (var j = 0; j < flats.length; j++) {
+      var len = flats[j].flat.plain.length;
+      if (charOff <= skip + len) {
+        var local = Math.max(0, Math.min(len, charOff - skip));
+        var mp = flats[j].flat.map;
+        var col = local < mp.length ? mp[local] : lines[flats[j].line].length;
+        return { line: flats[j].line, col: col };
+      }
+      /* 跨行时，渲染中的软换行 / 列表项之间的分隔各算 1 个字符 */
+      skip += len + 1;
+    }
+    var last = flats[flats.length - 1];
+    return { line: last.line, col: lines[last.line].length };
+  }
+
+  function pointToAbsolute(p) {
+    if (!p) return null;
+    return lineStartOffset(source.value, p.line) + p.col;
+  }
+
+  /* 读取用户当前选区：优先取预览区（并换算到源码），否则用 textarea 自身 */
+  function effectiveSelection() {
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.rangeCount) {
+      var range = sel.getRangeAt(0);
+      if (preview.contains(range.commonAncestorContainer) ||
+          preview.contains(range.startContainer) || preview.contains(range.endContainer)) {
+        var a = mapPreviewPoint(range.startContainer, range.startOffset);
+        var b = mapPreviewPoint(range.endContainer, range.endOffset);
+        if (a && b) {
+          var pa = pointToAbsolute(a), pb = pointToAbsolute(b);
+          if (pa != null && pb != null && pa !== pb) {
+            return { start: Math.min(pa, pb), end: Math.max(pa, pb), fromPreview: true };
+          }
+        }
+      }
+    }
+    return { start: source.selectionStart, end: source.selectionEnd, fromPreview: false };
+  }
+
+  /* 把源码选区重新应用到 textarea（预览选区改格式后保持高亮） */
+  function applySelectionToSource(sel) {
+    source.focus();
+    try { source.setSelectionRange(sel.start, sel.end); } catch (e) {}
+  }
+
+  /* ---------------- 预览区选区 → 浮动气泡 ---------------- */
+  function previewBubble(selection) {
+    var sel = selection || window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) { hideBubble(); return; }
+    var range;
+    try { range = sel.getRangeAt(0); } catch (e) { hideBubble(); return; }
+    if (!preview.contains(range.commonAncestorContainer) &&
+        !preview.contains(range.startContainer)) { return; }
+    var rect = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) { hideBubble(); return; }
+    bubble.hidden = false;
+    bubble.classList.remove('flip');
+    var bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+    var left = Math.max(8, Math.min(rect.left + rect.width / 2 - bw / 2, window.innerWidth - bw - 8));
+    var top = rect.top - bh - 10, flipped = false;
+    if (top < 100) { top = rect.bottom + 10; flipped = true; }
+    bubble.classList.toggle('flip', flipped);
+    bubble.style.left = left + 'px';
+    bubble.style.top = Math.max(100, top) + 'px';
+    // 记住这次选区来自预览，点击按钮时要先换算
+    bubble.dataset.fromPreview = '1';
   }
 
   /* 行首前缀命令（标题 / 引用 / 列表） */
@@ -350,7 +508,9 @@
     strike: function () { wrapSelection('~~', '~~', '删除线文本'); },
     code:   function () { wrapSelection('`', '`', 'code'); },
     link:   function () {
-      linkTarget = { start: source.selectionStart, end: source.selectionEnd };
+      var sel = effectiveSelection();
+      linkTarget = { start: sel.start, end: sel.end };
+      // exec() 已在调用前同步过选区到 textarea
       var r = source.getBoundingClientRect();
       linkPop.style.position = 'fixed';
       linkPop.style.left = Math.min(window.innerWidth - 280, Math.max(8, r.left + 20)) + 'px';
@@ -403,7 +563,11 @@
 
   function exec(fmt) {
     if (!FMT[fmt]) return;
-    source.focus();
+    /* 关键：若选区来自右侧预览（用户直接选渲染文本），
+       先把选区映射回源码并设置到 textarea，格式命令照常作用于源码。 */
+    var sel = effectiveSelection();
+    if (sel.fromPreview) applySelectionToSource(sel);
+    else source.focus();
     FMT[fmt]();
     hideBubble();
     updateToolbarState();
@@ -447,12 +611,26 @@
     bubble.style.left = Math.max(8, Math.min(rect.left + rect.width / 2 - bw / 2, window.innerWidth - bw - 8)) + 'px';
     bubble.style.top = Math.max(100, top) + 'px';
   }
-  source.addEventListener('mouseup', maybeBubble);
+  source.addEventListener('mouseup', function () {
+    bubble.dataset.fromPreview = '';
+    maybeBubble();
+  });
   source.addEventListener('keyup', function (e) {
-    if (e.shiftKey || e.key.indexOf('Arrow') === 0) maybeBubble();
+    if (e.shiftKey || e.key.indexOf('Arrow') === 0) { bubble.dataset.fromPreview = ''; maybeBubble(); }
+  });
+  /* 在右侧预览里选中渲染文本，也弹出同一个格式气泡。
+     mouseup 时浏览器已完成 selection 更新，可同步读取。 */
+  preview.addEventListener('mouseup', function () { previewBubble(); });
+  document.addEventListener('keyup', function (e) {
+    if ((e.shiftKey || e.key.indexOf('Arrow') === 0) && window.getSelection() &&
+        !window.getSelection().isCollapsed) {
+      var r = window.getSelection().getRangeAt(0);
+      if (preview.contains(r.commonAncestorContainer)) previewBubble();
+    }
   });
   document.addEventListener('mousedown', function (e) {
-    if (!bubble.contains(e.target) && e.target !== source) hideBubble();
+    if (!bubble.contains(e.target) && e.target !== source &&
+        !preview.contains(e.target)) hideBubble();
   }, true);
 
   $$('.toolbar .tbtn[data-fmt]').forEach(function (btn) {
@@ -468,12 +646,16 @@
     });
   });
   $$('.bubble button[data-fmt]').forEach(function (btn) {
-    btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    btn.addEventListener('mousedown', function (e) {
+      e.preventDefault(); // 保住预览区/源码区的 DOM 选区
+    });
     btn.addEventListener('click', function () {
       var fmt = btn.dataset.fmt;
       if (fmt === 'link') { exec('link'); return; }
       exec(fmt);
       toastMsg('已对选中文本应用「' + btn.title + '」');
+      // 格式作用于源码后，把源码选区高亮出来，且清除预览的旧 DOM 选区
+      try { window.getSelection().removeAllRanges(); } catch (e) {}
     });
   });
 

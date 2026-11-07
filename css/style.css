@@ -312,7 +312,8 @@ kbd {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--ink-2);
 }
-.markdown-body blockquote p { margin: 0; font-style: italic; }
+/* 引用块默认正体：只有作者写了 *斜体* 才渲染为斜体 */
+.markdown-body blockquote p { margin: 0; font-style: normal; }
 .markdown-body table {
   width: 100%; border-collapse: collapse; margin: 16px 0 20px;
   font-size: 13px; box-shadow: var(--shadow-card);
@@ -335,12 +336,29 @@ kbd {
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.plan { background: var(--code-inline-bg); color: var(--ink-muted); }
 .markdown-body pre {
+  position: relative;
   margin: 16px 0 20px; padding: 16px 18px;
   background: var(--code-bg); border: 1px solid var(--paper-line);
   border-radius: var(--radius); overflow-x: auto;
   font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7;
 }
+/* 围栏代码块的语言标签：显示在右上角，例如 ```js → js */
+.markdown-body .code-lang {
+  position: absolute; top: 0; right: 0;
+  padding: 3px 10px; border-radius: 0 var(--radius) 0 var(--radius-sm);
+  background: var(--accent-soft); color: var(--accent);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .4px; text-transform: lowercase;
+  border-left: 1px solid var(--paper-line); border-bottom: 1px solid var(--paper-line);
+  user-select: none; pointer-events: none;
+}
+.markdown-body pre[data-language]:not([data-language='']) { padding-top: 24px; }
 .markdown-body pre code { background: none; padding: 0; color: var(--ink-2); font-size: inherit; }
+
+/* 预览区文本可选中（用于「选渲染文本改格式」） */
+.markdown-body, .markdown-body * { user-select: text; }
+.markdown-body .code-lang { user-select: none; }
+.markdown-body ::selection { background: var(--selection); }
 .ck { color: var(--syn-head); } .cf { color: var(--syn-fn); } .cs { color: var(--ok); }
 .task-list { list-style: none; padding-left: 4px; }
 .task-list li { display: flex; align-items: center; gap: 9px; }
