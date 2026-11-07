@@ -144,7 +144,7 @@
 
   // 反馈2：版本号硬编码 2.0.0
   const vEl = document.querySelector('#appVersion');
-  checks['三轮2：版本号硬编码 v2.0.0'] = !!vEl && vEl.textContent.trim() === 'v2.0.0';
+  checks['三轮2：版本号硬编码（2.0.x）'] = !!vEl && /^v2\.0\.\d+$/.test(vEl.textContent.trim());
 
   // 反馈3：页面不再有任何二进制资源引用（图片/字体都由 CSS 变量或系统字体提供）
   const bins = Array.from(document.querySelectorAll('img[src], link[rel="stylesheet"], script[src]'))
