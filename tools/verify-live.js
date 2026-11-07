@@ -39,7 +39,10 @@ const getJSON = url => new Promise((res, rej) => {
   });
   const evaluate = async expr => {
     const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, userGesture: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text);
+    if (r.exceptionDetails) {
+      const desc = (r.exceptionDetails.exception && r.exceptionDetails.exception.description) || '';
+      throw new Error((r.exceptionDetails.text || '') + ' ' + desc);
+    }
     return r.result.value;
   };
   try {

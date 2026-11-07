@@ -42,10 +42,10 @@ patch('index.html', s => s.replace(
   /(<span class="status-item status-version" id="appVersion" title="应用版本">)(.*?)(<\/span>)/,
   (_, a, __, c) => a + 'v' + v + c));
 
-// 2) README 中的版本徽标 / 说明
-patch('README.md', s => s
-  .replace(/(当前版本：)(\*\*v?\d+\.\d+\.\d+\*\*|v?\d+\.\d+\.\d+)/, (_, a) => a + '**v' + v + '**')
-  .replace(/(version-)(\d+\.\d+\.\d+)/g, (_, a) => a + v));
+// 2) README 中的版本说明（单独捕获前后 `**`，避免重复套星号）
+patch('README.md', s => s.replace(
+  /(当前版本：)(\*\*)?v?\d+\.\d+\.\d+(\*\*)?/,
+  (_, a, b, c) => a + (b || '') + 'v' + v + (c || '')));
 
 // 3) Windows 启动器标题里的版本
 patch('desktop/launcher.c', s => s.replace(

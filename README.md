@@ -2,7 +2,7 @@
 
 > 选中文本，一键加格式；左边写 Markdown，右边实时看结果。
 
-**当前版本：**v1.1.0****（版本号唯一来源是 [`VERSION`](VERSION)，改完跑 `node tools/version.js` 同步到页面与 exe）
+**当前版本：v1.1.0**（版本号唯一来源是 [`VERSION`](VERSION)，改完跑 `node tools/version.js` 同步到页面与 exe）
 
 一个**纯前端、零依赖、轻量本地**的双栏 Markdown 编辑器。无构建步骤、无后端、无账号、无网络请求，文档只保存在浏览器本地；直接用浏览器打开即可使用，另提供一个 Windows 桌面启动器。
 
@@ -63,14 +63,16 @@ node tools/serve.js 8099
 ```bash
 node tools/test-render.js                 # 渲染引擎 + XSS 防护 + 行映射（37 项）
 node tools/serve.js 8099                 # 另开一个终端
-node tools/verify-browser.js             # Headless Chrome 端到端（45 项）
+node tools/verify-browser.js             # Headless Chrome 端到端（62 项）
 node tools/visual-check.js               # 关键元素计算样式核验（6 项）
+node tools/export-check.js               # 导出 HTML 可滚动 / 样式核验（9 项）
 node tools/verify-live.js                # 线上 GitHub Pages 冒烟验证（14 项）
 ```
 
-本地全量回归共 **95 项**，线上另有 14 项冒烟验证。覆盖：预览区选渲染文本改格式
+本地全量回归共 **114 项**，线上另有 14 项冒烟验证。覆盖：预览区选渲染文本改格式
 （段落 / 标题 / 列表 / 表格单元格 / 引用块）、空格自动外移、代码块语言标签、
-引用块正体、示例文档文案、XSS 防护与撤销重做。
+引用块正体、双主题、预览视图铺满、版本号、导出可滚动、重复格式取消、粗斜体组合、
+XSS 防护与撤销重做。
 
 ## 线上地址
 
